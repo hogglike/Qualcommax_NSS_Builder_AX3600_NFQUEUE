@@ -1,4 +1,152 @@
-# Qualcommax NSS Builder
+# Qualcommax NSS Builder — AX3600 NFQUEUE fork
+
+This fork keeps the upstream **Qualcommax NSS / EDMA** build and adds the
+kernel-side **NFQUEUE support required by userspace packet-processing tools on
+the Xiaomi AX3600**.
+
+> **Scope:** the NFQUEUE change is intentionally limited to the
+> `xiaomi_ax3600` build profile. Other device groups remain identical to
+> upstream unless explicitly changed later.
+
+## What this fork adds
+
+The Xiaomi AX3600 image enables these two OpenWrt kernel packages:
+
+```text
+CONFIG_PACKAGE_kmod-nfnetlink-queue=y
+CONFIG_PACKAGE_kmod-nft-queue=y
+```
+
+They provide the kernel path:
+
+```text
+nftables  →  NFQUEUE  →  userspace application
+```
+
+This is **not specific to Zapret2**. NFQUEUE is a generic Linux Netfilter
+interface and can be used by packet inspection, filtering, diagnostics,
+IDS/IPS and other userspace networking software.
+
+Zapret2 is simply one useful application of it.
+
+### What is *not* included
+
+- Zapret2 itself is **not bundled** in the firmware.
+- No bypass strategy, host list or DPI configuration is baked into the image.
+- The fork does not intentionally disable Qualcomm NSS/ECM acceleration.
+- NFQUEUE is currently added only to the Xiaomi AX3600 build.
+
+The goal is to keep the router image close to upstream while making the missing
+kernel functionality available.
+
+## Tested on Xiaomi AX3600
+
+The NFQUEUE-enabled AX3600 image has been built and boot-tested with:
+
+```text
+OpenWrt SNAPSHOT r0+36271-c24c2aead5
+Linux 6.18.44
+NSS.FW.12.5-210-HK.R
+kmod-nfnetlink-queue 6.18.44-r1
+kmod-nft-queue       6.18.44-r1
+Zapret2 v1.0.5.2
+```
+
+After installing Zapret2, NFQUEUE traffic processing and Qualcomm NSS/ECM
+offload were verified to work at the same time. `nss-status` continued to
+report `OFFLOAD ACTIVE`.
+
+## Building the AX3600 NFQUEUE image
+
+1. Open **Actions → Build → Run workflow** in this fork.
+2. Wait for **Build xiaomi_ax3600 (default)** to complete successfully.
+3. Use the non-mesh `edma-nss` release unless you specifically need the
+   separate 802.11s mesh build.
+4. For Xiaomi AX3600, the sysupgrade image is:
+
+```text
+openwrt-qualcommax-ipq807x-xiaomi_ax3600-squashfs-sysupgrade.bin
+```
+
+A successful build also validates requested Kconfig symbols after
+`make defconfig`, so a requested package silently disappearing from the final
+configuration should fail the build rather than produce an apparently valid
+release.
+
+## Flashing
+
+These are **sysupgrade images**. You must already have OpenWrt installed.
+
+Before flashing, make a current configuration backup.
+
+For an existing compatible build, normal sysupgrade with retained settings can
+be used. For a first migration from a different build, follow the normal
+OpenWrt migration guidance and do not use **Force upgrade** just to bypass an
+image compatibility warning.
+
+## Verify NFQUEUE after boot
+
+SSH into the router and run:
+
+```sh
+uname -r
+
+apk list --installed | grep -E 'kmod-(nfnetlink|nft)-queue'
+
+find /lib/modules/$(uname -r) -type f \
+  | grep -E 'nfnetlink_queue|nft_queue'
+
+nss-status
+```
+
+Expected NFQUEUE modules:
+
+```text
+nfnetlink_queue.ko
+nft_queue.ko
+```
+
+And for the NSS build, `nss-status` should still end with:
+
+```text
+verdict:     OFFLOAD ACTIVE
+```
+
+## Zapret2 notes
+
+Zapret2 can use nftables `queue` rules to send selected packets to
+`nfqws2`. This fork only supplies the kernel capability that was absent from
+the original AX3600 image.
+
+A working installation should be checked with commands such as:
+
+```sh
+/etc/init.d/zapret2 status
+pgrep -af nfqws2
+/etc/init.d/zapret2 list_table
+nss-status
+```
+
+The exact DPI/desync strategy is ISP-dependent. A successful Zapret2 install
+does not guarantee that its default strategy will work for every network.
+
+Also note that Qualcomm NSS/ECM offload in this build is not the same thing as
+the generic OpenWrt software/hardware flow-offloading toggle. After changing
+packet-processing or offload settings, verify the actual state with
+`nss-status`.
+
+More technical details are in [docs/NFQUEUE.md](docs/NFQUEUE.md).
+
+## Upstream
+
+This is a fork of
+[JuliusBairaktaris/Qualcommax_NSS_Builder](https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder).
+The original project and its authors deserve credit for the OpenWrt
+Qualcommax/NSS builder, EDMA/NSS integration and build pipeline.
+
+The upstream documentation is preserved below.
+
+---
 
 ### OpenWrt image builder for IPQ807x — NSS hardware offload on the upstream EDMA drivers
 
